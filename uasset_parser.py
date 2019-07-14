@@ -19,7 +19,7 @@ from pandas import DataFrame
 excel_dict = {}
 name_dict = {}
 import_dict = {}
-export_dict = {}
+export_dict = {} 
 # exp_file_path = r'C:\Users\kassent\Desktop\UnrealPakSwitch\v4\2\3\output\Octopath_Traveler\Content\GameText\Database\GameTextZH_CN.uexp'
 # asset_file_path = r'C:\Users\kassent\Desktop\UnrealPakSwitch\v4\2\3\output\Octopath_Traveler\Content\GameText\Database\GameTextZH_CN.uasset'
 # cn_json_file_path = r'C:\Users\kassent\Desktop\GameText\octopath_traveller_cn.json'
@@ -296,153 +296,54 @@ class FObjectExport():
 
 
 class FPropertyTag():
-
-    class FPropertyTagData():
-        def __init__(self, cursor, property_type: str, property_tag):
-            self.val, self.text = '', None
-            if property_type in 'BoolProperty':
-                self.val = str(property_tag.bool_val)
-            elif property_type in 'StructProperty':
-                pass
-            elif property_type in 'ObjectProperty':
-                package_index = FPackageIndex(cursor)
-                self.val = 'index: {0}  name: {1}'.format(package_index.index, package_index.import_object_name)
-            elif property_type in 'InterfaceProperty':
-                pass
-            elif property_type in 'FloatProperty':
-                self.val = str(read_float(cursor))
-            elif property_type in 'TextProperty':
-                self.text = FText(cursor)
-                self.val = self.text.source_string
-            elif property_type in 'StrProperty':
-                self.val = read_string(cursor)
-            elif property_type in 'NameProperty':
-                self.val = read_fname(cursor)
-            elif property_type in 'IntProperty':
-                self.val = str(read_int32(cursor))
-            elif property_type in 'UInt16Property':
-                self.val = str(read_uint16(cursor))
-            elif property_type in 'UInt32Property':
-                self.val = str(read_uint32(cursor))
-            elif property_type in 'UInt64Property':
-                self.val = str(read_uint64(cursor))
-            elif property_type in 'ArrayProperty':
-                pass
-            elif property_type in 'MapProperty':
-                pass
-            elif property_type in 'ByteProperty':
-                name = property_tag.enum_name
-                if name == 'None':
-                    self.val = '{0:X}'.format(read_uint8(cursor))
-                else:
-                    self.val = read_fname(cursor)
-            elif property_type in 'EnumProperty':
-                name = property_tag.enum_name
-                if name != 'None':
-                    self.val = read_fname(cursor)
-            elif property_type in 'SoftObjectProperty':
-                pass
-            else:
-                raise ParseException('Unknown property type: {0} with cursor at pos 0x{1:X}'\
-                                     .format(property_type, cursor.tell()))
-
-        def serialize(self):
-            assert self.text is not None
-            bytes_arr = self.text.serialize()
-            return bytes_arr
-        
-        def __str__(self):
-            return self.val
-
-
     def __init__(self, cursor, read_data: bool):
-
-        def tag_data_overrides(tag_name):
-            key, value = None, None
-            tag_name = tag_name.strip()
-            if tag_name in 'BindingIdToReferences':
-                key, value = 'FGuid', 'LevelSequenceBindingReferenceArray'
-            elif tag_name in 'Tracks':
-                key, value = 'MovieSceneTrackIdentifier', 'MovieSceneEvaluationTrack'
-            elif tag_name in 'SubTemplateSerialNumbers':
-                key, value = 'MovieSceneSequenceID', 'UInt32Property'
-            elif tag_name in 'SubSequences':
-                key, value = 'MovieSceneSequenceID', 'MovieSceneSubSequenceData'
-            elif tag_name in 'Hierarchy':
-                key, value = 'MovieSceneSequenceID', 'MovieSceneSequenceHierarchyNode'
-            elif tag_name in 'TrackSignatureToTrackIdentifier':
-                key, value = 'FGuid', 'MovieSceneTrackIdentifier'
-            elif tag_name in 'SubSectionRanges':
-                key, value = 'FGuid', 'MovieSceneFrameRange'
-            return (key, value)
-		
         self.name, self.val = read_fname(cursor), ''
         assert self.name
         if self.name != 'None':
-            self.property_type = read_fname(cursor)
-            if self.property_type:
-                self.property_type = self.property_type.strip()
+            self.property_type = read_fname(cursor).strip()
             self.size = read_int32(cursor)
             self.array_index = read_int32(cursor)
-            if self.property_type in 'StructProperty':
-                self.struct_name = read_fname(cursor)
-                self.struct_guid = FGuid(cursor)
-            elif self.property_type in 'BoolProperty':
-                self.bool_val = read_uint8(cursor) != 0
-            elif self.property_type in 'EnumProperty':
-                self.enum_name = read_fname(cursor)
-                self.has_property_guid = read_uint8(cursor) != 0
-                self.property_guid = FGuid(cursor) if self.has_property_guid else None
-            elif self.property_type in 'ByteProperty':
-                self.enum_name = read_fname(cursor)
-            elif self.property_type in 'ArrayProperty':
-                self.inner_type = read_fname(cursor)
-            elif self.property_type in 'MapProperty':
-                self.inner_type = read_fname(cursor)
-                self.value_type = read_fname(cursor)
-                key, value = tag_data_overrides(self.name)
-                if key or value:
-                    self.inner_type, self.value_type = key, value
-            elif self.property_type in 'SetProperty':
-                self.inner_type = read_fname(cursor)
-            else:
-                pass
+            assert self.property_type in 'TextProperty' or self.property_type in 'ObjectProperty'
             self.has_property_guid = read_uint8(cursor) != 0
             self.property_guid = FGuid(cursor) if self.has_property_guid else None
-            # print('Property Tag: {0} ({1})'.format(self.name, self.property_type))
             cursor_pos = cursor.tell()
-            self.property_data = FPropertyTag.FPropertyTagData(cursor, self.property_type, self)
-            self.val = str(self.property_data)
+            if self.property_type in 'TextProperty':
+                self.text_data = FText(cursor)
+            else: # 'ObjectProperty'
+                self.object_data = FPackageIndex(cursor)
             final_pos = cursor_pos + self.size
             cursor.seek(final_pos, 0)
-            print('Property Tag: {0}  Type: {1}  Val: {2} PropretyOffset: {3:X}'.format(self.name, self.property_type, self.val, cursor_pos))
         else:
             raise ValueError('End of FPropertyTag')
     
+    def __str__(self):
+        if self.property_type in 'TextProperty':
+            return self.text_data.source_string
+        elif self.property_type in 'ObjectProperty':
+            return self.object_data.import_object_name
     
     def serialize(self):
         assert self.property_type in 'TextProperty'
-        bytes_arr = pack_fname(self.name)
-        bytes_arr += pack_int32(0)
-        bytes_arr += pack_fname(self.property_type)
-        bytes_arr += pack_int32(0)
-        bytes_property_data = self.property_data.serialize()
-        bytes_arr += pack_int32(len(bytes_property_data))
-        bytes_arr += pack_int32(self.array_index)
-        bytes_arr += pack_int8(self.has_property_guid)
+        bytes_result = pack_fname(self.name)
+        bytes_result += pack_int32(0)
+        bytes_result += pack_fname(self.property_type)
+        bytes_result += pack_int32(0)
+        bytes_text = self.text_data.serialize()
+        bytes_result += pack_int32(len(bytes_text))
+        bytes_result += pack_int32(self.array_index)
+        bytes_result += pack_int8(self.has_property_guid)
         if self.has_property_guid:
-            bytes_arr += self.property_guid.serialize()
-        bytes_arr += bytes_property_data
-        return bytes_arr
+            bytes_result += self.property_guid.serialize()
+        bytes_result += bytes_text
+        return bytes_result
         
-    def __str__(self):
-        return self.val
+
             
 
 class FRowStruct():
     def __init__(self, cursor):
         self.name = read_fname(cursor, False)
-        self.name_index = read_int32(cursor) # 
+        self.name_num = read_int32(cursor)
         self.columns = []
         while True:
             try:
@@ -450,7 +351,7 @@ class FRowStruct():
                 self.columns.append(property_tag)
             except ValueError:
                 break
-        self.update_localization_text()
+        # self.update_localization_text()
         
     def update_localization_text(self):
         global excel_dict
@@ -465,13 +366,13 @@ class FRowStruct():
         pass
             
     def serialize(self):
-        bytes_arr = pack_fname(self.name)
-        bytes_arr += pack_int32(self.name_index)
+        bytes_result = pack_fname(self.name)
+        bytes_result += pack_int32(self.name_num)
         for property_tag in self.columns:
-            bytes_arr += property_tag.serialize()
-        bytes_arr += pack_fname('None')
-        bytes_arr += pack_int32(0)
-        return bytes_arr
+            bytes_result += property_tag.serialize()
+        bytes_result += pack_fname('None')
+        bytes_result += pack_int32(0)
+        return bytes_result
     
 
 class UObject():
@@ -525,14 +426,13 @@ class UDataTable(UObject):
     def __iter__(self):
         """读取octopath traveller的翻译文件"""
         for row in self.rows:
-            row_name, column_data = row.name, {}
+            row_name, row_name_num = row.name, row.name_num
+            column_data = {}
             for column in row.columns:
-                column_data[column.name] = column.val
+                column_data[column.name] = str(column)
             if 'Text' in column_data:
-                yield row_name, column_data['Text']   
-    
-    def save_csv_file(self):
-        pass
+                yield row_name, row_name_num, column_data['Text']   
+
 
 class ClassList():
     def __init__(self, cls, cursor):
@@ -628,13 +528,13 @@ def read_localization_file(file_path):
                 position = obj_export.serial_offset - asset_length
                 expFile.seek(position, 0)
                 if export_type in 'DataTable':
-                    data_table = UDataTable(expFile, True)
+                    data_table = UDataTable(expFile, False)
                     final_pos = position + obj_export.serial_size
-                    # assert final_pos == data_table.final_cursor_pos
-                    with open(r'C:\Users\kassent\Desktop\test\test_23_05.bak', 'wb+') as outputFile:
-                        outputFile.write(data_table.repack_bytes)
-                    for row_id, row_text in data_table:
-                        yield row_id, row_text
+                    assert final_pos == data_table.final_cursor_pos
+                    # with open(r'C:\Users\kassent\Desktop\test\test_23_05.bak', 'wb+') as outputFile:
+                    #     outputFile.write(data_table.repack_bytes)
+                    for row_id, row_num, row_text in data_table:
+                        yield row_id, row_num, row_text
 
 
 def parse_excel_file(tr_dict, excel_path):
@@ -663,48 +563,48 @@ def commit_localization_changes():
 
 def main():
     
-    commit_localization_changes()
+    # commit_localization_changes()
     
     
     en_data, zh_cn_data, zh_tw_data, jp_data = {}, {}, {}, {}
-    # jp_file_path = root_path + jp_file_name
-    # for row_id, row_text in read_localization_file(jp_file_path):
-    #     jp_data[row_id] = row_text
+    jp_file_path = root_path + jp_file_name
+    for row_id, row_num, row_text in read_localization_file(jp_file_path):
+        if row_id not in jp_data:
+            jp_data[row_id] = {}
+        jp_data[row_id][row_num] = row_text
         
-    # en_file_path = root_path + en_file_name
-    # for row_id, row_text in read_localization_file(en_file_path):
-    #     en_data[row_id] = row_text
+    en_file_path = root_path + en_file_name
+    for row_id, row_num, row_text in read_localization_file(en_file_path):
+        if row_id not in en_data:
+            en_data[row_id] = {}
+        en_data[row_id][row_num] = row_text
         
     chs_file_path = root_path + chs_file_name
-    for row_id, row_text in read_localization_file(chs_file_path):
-        zh_cn_data[row_id] = row_text
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    # cht_file_path = root_path + cht_file_name
-    # for row_id, row_text in read_localization_file(cht_file_path):
-    #     zh_tw_data[row_id] = row_text
+    for row_id, row_num, row_text in read_localization_file(chs_file_path):
+        if row_id not in zh_cn_data:
+            zh_cn_data[row_id] = {}
+        zh_cn_data[row_id][row_num] = row_text
+     
+    cht_file_path = root_path + cht_file_name
+    for row_id, row_num, row_text in read_localization_file(cht_file_path):
+        if row_id not in zh_tw_data:
+            zh_tw_data[row_id] = {}
+        zh_tw_data[row_id][row_num] = row_text
 
 
-    # output_dict = {}
-    # output_dict['ID'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], []
-    # for row_id, row_text in zh_cn_data.items():
-    #     output_dict['ID'].append(row_id)
-    #     output_dict['CN'].append(row_text)
-    #     output_dict['EN'].append(en_data[row_id] if row_id in en_data else '')
-    #     output_dict['JP'].append(jp_data[row_id] if row_id in jp_data else '')
-    #     output_dict['TW'].append(zh_tw_data[row_id] if row_id in zh_tw_data else '')
+    output_dict = {}
+    output_dict['ID'], output_dict['NID'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], []
+    for row_id, row_data in zh_cn_data.items():
+        for row_index, row_text in row_data.items():
+            output_dict['ID'].append(row_id)
+            output_dict['NID'].append(row_index)
+            output_dict['CN'].append(row_text)
+            output_dict['EN'].append(en_data[row_id][row_index] if row_id in en_data and row_index in en_data[row_id] else '')
+            output_dict['JP'].append(jp_data[row_id][row_index] if row_id in jp_data and row_index in jp_data[row_id] else '')
+            output_dict['TW'].append(zh_tw_data[row_id][row_index] if row_id in zh_tw_data and row_index in zh_tw_data[row_id] else '')
     
-    # frame_data = DataFrame.from_dict(output_dict)
-    # frame_data.to_excel(r'C:\Users\kassent\Desktop\GameText\localization.xlsx', encoding='utf-8')
+    frame_data = DataFrame.from_dict(output_dict)
+    frame_data.to_excel(r'C:\Users\kassent\Desktop\GameText\localization_2019_07_15.xlsx', encoding='utf-8')
     
     # with open(r'C:\Users\kassent\Desktop\GameText\localization.csv', 'w+', newline='', encoding='utf-8') as csvfile:
     #     spamwriter = csv.writer(csvfile, delimiter=' ',quotechar='|', quoting=csv.QUOTE_MINIMAL)
