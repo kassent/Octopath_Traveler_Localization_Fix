@@ -16,24 +16,30 @@ import datetime
 from pandas import DataFrame
 
 
+ROOT_FOLDER = 'D:\\Workspace\\'
+SOURCE_FOLDER = ROOT_FOLDER + 'Text\\Database\\'
+TEXT_EXCEL_PATH = ROOT_FOLDER + r'localization_TEXT_FINAL.xlsx'
+TALK_EXCEL_PATH = ROOT_FOLDER + r'localization_TALK_FINAL.xlsx'
+OUTPUT_FOLDER = ROOT_FOLDER + r'\Output\\'
+
+EN_TALK_ASSET_NAME = r'TalkData_EN'
+JA_TALK_ASSET_NAME = r'TalkData_JA'
+CN_TALK_ASSET_NAME = r'TalkData_ZH_CH'
+TW_TALK_ASSET_NAME = r'TalkData_ZH_TW'
+
+EN_TEXT_ASSET_NAME = r'GameTextEN'
+JA_TEXT_ASSET_NAME = r'GameTextJA'
+CN_TEXT_ASSET_NAME = r'GameTextZH_CN'
+TW_TEXT_ASSET_NAME = r'GameTextZH_TW'
+
 # Global variables
+# 每次读取翻译文件，这些全局变量都会被清空重写。
 excel_dict = {}
 name_dict = {}
 import_dict = {}
 export_dict = {} 
 
-exp_file_path = r'C:\Users\kassent\Desktop\UnrealPakSwitch\v4\2\3\output\Octopath_Traveler\Content\GameText\Database\GameTextZH_TW.uexp'
-asset_file_path = r'C:\Users\kassent\Desktop\UnrealPakSwitch\v4\2\3\output\Octopath_Traveler\Content\GameText\Database\GameTextZH_TW.uasset'
-cn_json_file_path = r'C:\Users\kassent\Desktop\GameText\GameTextZH_TW.json'
-
-root_path = r'C:\Users\openebridge\Desktop\octo\Text2333\GameText\Database\\'
-chs_file_name = r'GameTextZH_CN'
-cht_file_name = r'GameTextZH_TW'
-en_file_name = r'GameTextEN'
-jp_file_name = r'GameTextJA'
-
-
-class ParseException(Exception):
+class ParseFileError(Exception):
     def __init__(self, msg = ''):
         self.err_msg = msg
 
@@ -43,7 +49,7 @@ class ParseException(Exception):
     def what(self):
         return self.err_msg
 
-class PackException(Exception):
+class PackFileError(Exception):
     def __init__(self, msg = ''):
         self.err_msg = msg
 
@@ -53,7 +59,7 @@ class PackException(Exception):
     def what(self):
         return self.err_msg
     
-# File parse utils
+# 一些二进制解包函数。
 def read_uint8(cursor):
     ''' Read a uint16 from the data buffer '''
     return struct.unpack(r'<B', cursor.read(1))[0]
@@ -93,7 +99,6 @@ def read_float(cursor):
 def read_string(cursor):
     length = read_int32(cursor)
     string = '\x00'
-    # print('strlen: {0:d}  current cursor: {1:X}'.format(length, cursor.tell()))
     assert length < 65536 and length > -65536
     if length < 0:
         string = cursor.read(length * -2).decode('utf-16')
@@ -113,13 +118,13 @@ def read_fname(cursor, parse_index = True):
 
 
 
-
-def pack_fname(string):
+# 一些二进制打包函数。
+def pack_fname(string, index=0):
     global name_dict
     for key, value in name_dict.items():
         if string == value.data:
-            return pack_int32(key)
-    raise PackException('Failed to pack Fname: {0}'.format(string))
+            return pack_int32(key) + pack_int32(index)
+    raise PackFileError('Failed to pack Fname: {0}'.format(string))
 
 def pack_uint8(val):
     return struct.pack(r'<B', val)
@@ -179,7 +184,7 @@ class FText():
             self.key = read_string(cursor)
             self.source_string = read_string(cursor)
         else:
-            raise ParseException('invalid history type: {0} with cursor at 0x{1:X}'.format(self.history_type, cursor.tell()))
+            raise ParseFileError('invalid history type: {0} with cursor at 0x{1:X}'.format(self.history_type, cursor.tell()))
         
     def serialize(self):
         bytes_arr = pack_uint32(self.flags)
@@ -315,13 +320,16 @@ class UScriptArray():
             elif inner_type in 'ObjectProperty':
                 self.content.append(FPackageIndex(cursor))
             elif inner_type in 'FloatProperty':
-                raise ParseException('Unimplement float property reader...')
+                raise ParseFileError('Unimplement float property reader...')
             elif inner_type in 'TextProperty':
                 self.content.append(FText(cursor))
             elif inner_type in 'StrProperty':
                 self.content.append(read_string(cursor))
             elif inner_type in 'NameProperty':
-                self.content.append(read_fname(cursor))
+                name_dict = {}
+                name_dict['NAME'] = read_fname(cursor, False)
+                name_dict['INDEX'] = read_int32(cursor)
+                self.content.append(name_dict)
             elif inner_type in 'IntProperty':
                 self.content.append(read_int32(cursor))               
             elif inner_type in 'UInt16Property':
@@ -334,15 +342,46 @@ class UScriptArray():
             #     if tag.enum_name and tag.enum_name != 'None':
             #         self.content.append(read_fname(cursor))
             else:
-                raise ParseException('Unknown property type...')
-            # if self.element_count > 1 and inner_type in 'StrProperty':
-            #     print(self.content)
+                raise ParseFileError('Unknown property type...')
             
     def __str__(self):
         str_list = []
         for element in self.content:
             str_list.append(str(element))
         return '@@'.join(str_list)
+
+    def serilize(self):
+        bytes_result = pack_uint32(self.element_count)
+        inner_type = self.inner_tyoe
+        if inner_type in 'BoolProperty' or inner_type in 'ByteProperty':
+            for element in self.content:
+                bytes_result += pack_uint8(element)
+        elif inner_type in 'ObjectProperty' or inner_type in 'TextProperty':
+            for element in self.content:
+                bytes_result += element.serialize()
+        elif inner_type in 'FloatProperty': # no float in this project...
+            raise PackFileError('Unimplement float property reader...')
+        elif inner_type in 'StrProperty':
+            for element in self.content:
+                bytes_result += pack_string(element)
+        elif inner_type in 'NameProperty':
+            for element in self.content:
+                bytes_result += pack_fname(element['NAME'], element['INDEX'])
+        elif inner_type in 'IntProperty':
+            for element in self.content:
+                bytes_result += pack_int32(element)             
+        elif inner_type in 'UInt16Property':
+            for element in self.content:
+                bytes_result += pack_uint16(element)    
+        elif inner_type in 'UInt32Property':
+            for element in self.content:
+                bytes_result += pack_uint32(element)
+        elif inner_type in 'UInt64Property':
+            for element in self.content:
+                bytes_result += pack_uint64(element)
+        else:
+            raise PackFileError('Unknown property type...')
+        return bytes_result
         
 
 
@@ -377,7 +416,7 @@ class FPropertyTag():
             cursor_pos = cursor.tell()
             if self.property_type in 'TextProperty':
                 self.text_data = FText(cursor)
-                print(self.text_data.source_string)
+                # print(self.text_data.source_string)
             elif self.property_type in 'ObjectProperty': # 'ObjectProperty'
                 self.object_data = FPackageIndex(cursor)
             elif self.property_type in 'EnumProperty':
@@ -409,17 +448,39 @@ class FPropertyTag():
         if self.property_type in 'TextProperty':
             self.text_data.source_string = string
             return True
+        elif self.property_type in 'ArrayProperty':
+            if self.array_data.element_count:
+                if self.inner_type in 'TextProperty':
+                    self.array_data.content[0].source_string = string
+                elif self.inner_type in 'StrProperty':
+                    self.array_data.content[0] = string
         return False
     
     def serialize(self):
-        assert self.property_type in 'TextProperty' or self.property_type in 'ObjectProperty'
         bytes_result = pack_fname(self.name)
-        bytes_result += pack_int32(0)
         bytes_result += pack_fname(self.property_type)
-        bytes_result += pack_int32(0)
-        bytes_data = self.text_data.serialize() if self.property_type in 'TextProperty' else self.object_data.serialize()
+
+        bytes_data = b''
+        if self.property_type in 'TextProperty':
+            bytes_data = self.text_data.serialize()
+        elif self.property_type in 'ObjectProperty':
+            bytes_data = self.object_data.serialize()
+        elif self.property_type in 'EnumProperty':
+            if self.enum_name != 'None':
+                bytes_data = pack_fname(self.enum_data)
+        elif self.property_type in 'ArrayProperty':
+            bytes_data = self.array_data.serilize()
+        else:
+            raise PackFileError('Unknown proprty type:{0}'.format(self.property_type))
+
         bytes_result += pack_int32(len(bytes_data))
         bytes_result += pack_int32(self.array_index)
+
+        if self.property_type in 'EnumProperty':
+            bytes_result += pack_fname(self.enum_name)
+        elif self.property_type in 'ArrayProperty':
+            bytes_result += pack_fname(self.inner_type)
+        
         bytes_result += pack_int8(self.has_property_guid)
         if self.has_property_guid:
             bytes_result += self.property_guid.serialize()
@@ -452,19 +513,17 @@ class FRowStruct():
             text_dict = excel_dict[self.name]
             if self.name_num in text_dict:
                 string_tr = text_dict[self.name_num]
-                assert len(self.columns) == 1
-                text_tag = self.columns[0]
-                if str(text_tag) != string_tr:
-                    text_tag.set_string(string_tr)
-                    print('Update translation with name: {0}, index:{1}, content:{2}'.format(self.name, self.name_num, string_tr))
+                # assert len(self.columns) == 1
+                for column in self.columns:
+                    if column.get_name() == 'Text' and str(column) != string_tr:
+                        column.set_string(string_tr)
+                        print('Update translation with name: {0}, index:{1}, content:{2}'.format(self.name, self.name_num, string_tr))
             
     def serialize(self):
-        bytes_result = pack_fname(self.name)
-        bytes_result += pack_int32(self.name_num)
+        bytes_result = pack_fname(self.name, self.name_num)
         for property_tag in self.columns:
             bytes_result += property_tag.serialize()
         bytes_result += pack_fname('None')
-        bytes_result += pack_int32(0)
         return bytes_result
     
 
@@ -487,7 +546,6 @@ class UObject():
         for property_tag in self.properties:
             bytes_list.append(property_tag.serialize())
         bytes_list.append(pack_fname('None'))
-        bytes_list.append(pack_int32(0))
         bytes_list.append(pack_uint32(self.has_serialize_guid))
         if self.has_serialize_guid:
             bytes_list.append(self.guid.serialize())
@@ -512,7 +570,7 @@ class UDataTable(UObject):
         bytes_list.append(super().serialize())
         bytes_list.append(pack_int32(self.num_rows))
         for index, row in enumerate(self.rows):
-            print('Processing: {0}/{1} ({2:.2f}%)...'.format(index, self.num_rows, float(index) / self.num_rows * 100))
+            print('Processing: {0}/{1} ({2:.2f}%)...'.format(index, self.num_rows, float(index + 1) / self.num_rows * 100))
             bytes_list.append(row.serialize())
         bytes_list.append(pack_uint32(self.checksum))
         return b''.join(bytes_list)       
@@ -598,37 +656,36 @@ class FPackageFileSummary():
 
 
 def read_localization_file(file_path):
-        with open(file_path + '.uasset', 'rb') as assetFile, open(file_path + '.uexp', 'rb') as expFile:
-            exp_file_length = len(expFile.read())
-            expFile.seek(0, 0)
-            global name_dict
-            name_dict.clear()
-            pack_file_summary = FPackageFileSummary(assetFile)
-            print(pack_file_summary)
-            assetFile.seek(pack_file_summary.name_offset, 0)
-            for idx in range(pack_file_summary.name_count):
-                name_dict[idx] = FNameEntrySerialized(assetFile)
+    with open(file_path + '.uasset', 'rb') as assetFile, open(file_path + '.uexp', 'rb') as expFile:
+        exp_file_length = len(expFile.read())
+        expFile.seek(0, 0)
+        global name_dict
+        name_dict.clear()
+        pack_file_summary = FPackageFileSummary(assetFile)
+        assetFile.seek(pack_file_summary.name_offset, 0)
+        for idx in range(pack_file_summary.name_count):
+            name_dict[idx] = FNameEntrySerialized(assetFile)
 
-            global import_dict
-            import_dict.clear()
-            assetFile.seek(pack_file_summary.import_offset, 0)
-            for idx in range(pack_file_summary.import_count):
-                import_dict[idx] = FObjectImport(assetFile)
+        global import_dict
+        import_dict.clear()
+        assetFile.seek(pack_file_summary.import_offset, 0)
+        for idx in range(pack_file_summary.import_count):
+            import_dict[idx] = FObjectImport(assetFile)
 
-            global export_dict
-            export_dict.clear()
-            assetFile.seek(pack_file_summary.export_offset, 0)
-            for idx in range(pack_file_summary.export_count):
-                export_dict[idx] = FObjectExport(assetFile)
+        global export_dict
+        export_dict.clear()
+        assetFile.seek(pack_file_summary.export_offset, 0)
+        for idx in range(pack_file_summary.export_count):
+            export_dict[idx] = FObjectExport(assetFile)
             
-            asset_length = pack_file_summary.total_header_size                
-            for idx, export_obj in export_dict.items():
-                export_type = export_obj.class_index.import_object_name
-                position = export_obj.serial_offset - asset_length
-                assert export_obj.serial_size == exp_file_length - 4
-                expFile.seek(position, 0)
-                if export_type in 'DataTable':                  
-                    return (export_obj.serial_size_pos, UDataTable(expFile))
+        asset_length = pack_file_summary.total_header_size                
+        for idx, export_obj in export_dict.items():
+            export_type = export_obj.class_index.import_object_name
+            position = export_obj.serial_offset - asset_length
+            assert export_obj.serial_size == exp_file_length - 4
+            expFile.seek(position, 0)
+            if export_type in 'DataTable':                  
+                return (export_obj.serial_size_pos, UDataTable(expFile))
 
 
 def parse_excel_file(excel_dict, excel_path):
@@ -641,48 +698,33 @@ def parse_excel_file(excel_dict, excel_path):
         excel_dict[row_id][row_nid] = row_text 
         print(row_id, row_nid, row_text)
 
-# EXCEL_PATH = r'C:\Users\kassent\Desktop\workspace\localization_2019_07_15_16_07.xlsx'
-# SOURCE_FOLDER = r'C:\Users\kassent\Desktop\UnrealPakSwitch\Octopath_Traveler\Content\Talk\Database\\'
-# OUTPUT_FOLDER = r'C:\Users\kassent\Desktop\workspace\output\\'
-# CN_ASSET_FILE_NAME = r'TalkData_ZH_CH'
-# TW_ASSET_FILE_NAME = r'GameTextZH_TW'
-# EN_ASSET_FILE_NAME = r'GameTextEN'
-# JA_ASSET_FILE_NAME = r'GameTextJA'
 
-EXCEL_PATH = r'C:\Users\kassent\Desktop\workspace\localization_2019_07_15_16_07.xlsx'
-SOURCE_FOLDER = r'C:\Users\kassent\Desktop\UnrealPakSwitch\Octopath_Traveler\Content\Talk\Database\\'
-OUTPUT_FOLDER = r'C:\Users\kassent\Desktop\workspace\output\\'
-CN_ASSET_FILE_NAME = r'TalkData_ZH_CH'
-TW_ASSET_FILE_NAME = r'TalkData_ZH_TW'
-EN_ASSET_FILE_NAME = r'TalkData_EN'
-JA_ASSET_FILE_NAME = r'TalkData_JA'
-
-def parse_localization_files_to_excel():
+def parse_localization_files_to_excel(ja_file_name, en_file_name, cn_file_name, tw_file_name):
     en_data, zh_cn_data, zh_tw_data, jp_data = {}, {}, {}, {}
-    jp_asset_serial_pos, jp_data_table = read_localization_file(SOURCE_FOLDER + JA_ASSET_FILE_NAME)
+    _, jp_data_table = read_localization_file(SOURCE_FOLDER + ja_file_name)
     for row_id, row_num, row_text in jp_data_table:
+        assert row_id not in jp_data or (row_id in jp_data and row_num not in jp_data[row_id])
         if row_id not in jp_data:
             jp_data[row_id] = {}
         jp_data[row_id][row_num] = row_text
     
-    en_asset_serial_pos, en_data_table = read_localization_file(SOURCE_FOLDER + EN_ASSET_FILE_NAME)
+    _, en_data_table = read_localization_file(SOURCE_FOLDER + en_file_name)
     for row_id, row_num, row_text in en_data_table:
         if row_id not in en_data:
             en_data[row_id] = {}
         en_data[row_id][row_num] = row_text
 
-    cn_asset_serial_pos, cn_data_table = read_localization_file(SOURCE_FOLDER + CN_ASSET_FILE_NAME)
+    _, cn_data_table = read_localization_file(SOURCE_FOLDER + cn_file_name)
     for row_id, row_num, row_text in cn_data_table:
         if row_id not in zh_cn_data:
             zh_cn_data[row_id] = {}
         zh_cn_data[row_id][row_num] = row_text
      
-    tw_asset_serial_pos, tw_data_table = read_localization_file(SOURCE_FOLDER + TW_ASSET_FILE_NAME)
+    _, tw_data_table = read_localization_file(SOURCE_FOLDER + tw_file_name)
     for row_id, row_num, row_text in tw_data_table:
         if row_id not in zh_tw_data:
             zh_tw_data[row_id] = {}
         zh_tw_data[row_id][row_num] = row_text
-
 
     output_dict = {}
     output_dict['ID'], output_dict['NID'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], []
@@ -696,42 +738,42 @@ def parse_localization_files_to_excel():
             output_dict['TW'].append(zh_tw_data[row_id][row_index] if row_id in zh_tw_data and row_index in zh_tw_data[row_id] else '')
     
     frame_data = DataFrame.from_dict(output_dict)
-    frame_data.to_excel(r'C:\Users\kassent\Desktop\localization_2019_07_16_TALK.xlsx', encoding='utf-8')
+    file_name_suffix = datetime.datetime.today().strftime(' %Y-%m-%d %H.%M.%S.xlsx')
+    frame_data.to_excel(OUTPUT_FOLDER + cn_file_name + file_name_suffix, encoding='utf-8')
 
-
-def commit_localization_changes():
+def repack_localization_files_from_excel(excel_path, cn_asset_name):
     global excel_dict
-    chinese_res_path = r'C:\Users\kassent\Desktop\UnrealPakSwitch\v4\2\3\output\Octopath_Traveler\Content\GameText\Database\GameTextZH_CN'
-    excel_tr_path = r'C:\Users\kassent\Desktop\localization_bak.xlsx'
-    parse_excel_file(excel_dict, excel_tr_path)
-    for _ in read_localization_file(chinese_res_path):
-        pass
-    
-
-
-def main():
-    
-    parse_localization_files_to_excel()
-    return
-    
-    
-    global excel_dict
-    # parse_excel_file(excel_dict, EXCEL_PATH)
-    asset_serial_pos, data_table = read_localization_file(SOURCE_FOLDER + CN_ASSET_FILE_NAME)
+    excel_dict.clear()
+    parse_excel_file(excel_dict, excel_path)
+    asset_serial_pos, data_table = read_localization_file(SOURCE_FOLDER + cn_asset_name)
     if data_table is not None:
         data_table.update_localization_text()
         bytes_str = data_table.serialize()
-        # final_pos = position + obj_export.serial_size
-        # assert final_pos == data_table.final_cursor_pos
-        # fileName = datetime.datetime.today().strftime('%Y-%m-%d %H_%M_%S.uexp')
-        with open(OUTPUT_FOLDER + CN_ASSET_FILE_NAME + '.uexp', 'wb+') as outputExpFile:
+        with open(OUTPUT_FOLDER + cn_asset_name + '.uexp', 'wb+') as outputExpFile:
             outputExpFile.write(bytes_str)
-        assetFullName = CN_ASSET_FILE_NAME + '.uasset'
+            assetFullName = cn_asset_name + '.uasset'
         with open(SOURCE_FOLDER + assetFullName, 'rb') as sourceAssetFile, open(OUTPUT_FOLDER + assetFullName, 'wb+') as outputAssetFile:
             outputAssetFile.write(sourceAssetFile.read(asset_serial_pos))
             sourceAssetFile.seek(8, 1)
             outputAssetFile.write(pack_int64(len(bytes_str) - 4))
-            outputAssetFile.write(sourceAssetFile.read())
+            outputAssetFile.write(sourceAssetFile.read()) 
+
+
+UNPACK_TEXT_FILE = 0
+UNPACK_TALK_FILE = 1
+REPACK_TEXT_FILE = 2
+REPACK_TALK_FILE = 3
+CURRENT_COMMAND = REPACK_TEXT_FILE
+
+def main():
+    if CURRENT_COMMAND == UNPACK_TEXT_FILE:
+        parse_localization_files_to_excel(JA_TEXT_ASSET_NAME, EN_TEXT_ASSET_NAME, CN_TEXT_ASSET_NAME, TW_TEXT_ASSET_NAME)
+    elif CURRENT_COMMAND == UNPACK_TALK_FILE:
+        parse_localization_files_to_excel(JA_TALK_ASSET_NAME, EN_TALK_ASSET_NAME, CN_TALK_ASSET_NAME, TW_TALK_ASSET_NAME)
+    elif CURRENT_COMMAND == REPACK_TEXT_FILE:
+        repack_localization_files_from_excel(TEXT_EXCEL_PATH, CN_TEXT_ASSET_NAME)
+    elif CURRENT_COMMAND == REPACK_TALK_FILE:
+        repack_localization_files_from_excel(TALK_EXCEL_PATH, CN_TALK_ASSET_NAME)
 
 
 
