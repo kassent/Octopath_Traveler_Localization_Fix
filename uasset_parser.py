@@ -16,7 +16,7 @@ import datetime
 from pandas import DataFrame
 
 
-ROOT_FOLDER = 'D:\\Workspace\\'
+ROOT_FOLDER = 'E:\\PythonRecipes\\'
 SOURCE_FOLDER = ROOT_FOLDER + 'Text\\Database\\'
 TEXT_EXCEL_PATH = ROOT_FOLDER + r'localization_TEXT_FINAL.xlsx'
 TALK_EXCEL_PATH = ROOT_FOLDER + r'localization_TALK_FINAL.xlsx'
@@ -518,6 +518,7 @@ class FRowStruct():
                     if column.get_name() == 'Text' and str(column) != string_tr:
                         column.set_string(string_tr)
                         print('Update translation with name: {0}, index:{1}, content:{2}'.format(self.name, self.name_num, string_tr))
+
             
     def serialize(self):
         bytes_result = pack_fname(self.name, self.name_num)
@@ -689,14 +690,14 @@ def read_localization_file(file_path):
 
 
 def parse_excel_file(excel_dict, excel_path):
-    excel_content = pd.read_excel(excel_path).dropna(axis=0)
+    excel_content = pd.read_excel(excel_path)
     for i in excel_content.index.values:
-        row_dict = excel_content.loc[i, ['ID', 'NID', 'CN']].to_dict()
+        row_dict = excel_content.loc[i, ['ID', 'NID', 'CN']]# .to_dict()
         row_id, row_nid, row_text = row_dict['ID'], row_dict['NID'], row_dict['CN']
-        if row_id not in excel_dict:
-            excel_dict[row_id] = {}
-        excel_dict[row_id][row_nid] = row_text 
-        print(row_id, row_nid, row_text)
+        if isinstance(row_text, str):
+            if row_id not in excel_dict:
+                excel_dict[row_id] = {}
+            excel_dict[row_id][row_nid] = row_text
 
 
 def parse_localization_files_to_excel(ja_file_name, en_file_name, cn_file_name, tw_file_name):
