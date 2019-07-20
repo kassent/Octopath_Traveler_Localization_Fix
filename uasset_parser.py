@@ -1,4 +1,4 @@
-import logging
+import os
 import re
 import collections
 import struct
@@ -8,7 +8,6 @@ import math
 import sys
 import enum
 import json
-import csv
 import numpy as np
 import pandas as pd
 import threading
@@ -16,11 +15,11 @@ import datetime
 from pandas import DataFrame
 
 
-ROOT_FOLDER = 'E:\\PythonRecipes\\'
-SOURCE_FOLDER = ROOT_FOLDER + 'Text\\Database\\'
-TEXT_EXCEL_PATH = ROOT_FOLDER + r'localization_TEXT_FINAL.xlsx'
-TALK_EXCEL_PATH = ROOT_FOLDER + r'localization_TALK_FINAL.xlsx'
-OUTPUT_FOLDER = ROOT_FOLDER + r'\Output\\'
+ROOT_FOLDER = os.path.dirname(__file__)
+SOURCE_FOLDER = os.path.join(ROOT_FOLDER, 'Text\\Database\\')
+TEXT_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TEXT_FINAL.xlsx')
+TALK_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TALK_FINAL.xlsx')
+OUTPUT_FOLDER = os.path.join(ROOT_FOLDER, 'Output\\')
 
 EN_TALK_ASSET_NAME = r'TalkData_EN'
 JA_TALK_ASSET_NAME = r'TalkData_JA'
@@ -150,24 +149,22 @@ def pack_uint64(val):
 def pack_int64(val):
     return struct.pack(r'<q', val)
 
-def pack_string(string: str) -> bytes:
-    bytes_str, bytes_len = None, 0
+def pack_string(string: str) -> bytes:    
     if not len(string):
         return pack_int32(0)
+    bytes_str, bytes_len = bytearray(b'\x00' * 4), 0
     if string.isascii():
-        bytes_str = string.encode('utf-8')
+        bytes_str += string.encode('utf-8')
         bytes_str += b'\x00'
-        # print(bytes_str.hex())
-        bytes_len = len(bytes_str)
+        bytes_len = len(bytes_str) - 4
     else:
-        bytes_str = string.encode('utf-16')[2:]
+        bytes_str += string.encode('utf-16')[2:]
         bytes_str += b'\x00\x00'
-        # print(bytes_str.hex())
-        bytes_len = len(bytes_str)
+        bytes_len = len(bytes_str) - 4
         assert bytes_len % 2 == 0
         bytes_len //= -2
-    bytes_output = pack_int32(bytes_len) + bytes_str
-    return bytes_output
+    bytes_str[:4] = pack_int32(bytes_len)
+    return bytes_str
     
 
 
@@ -187,7 +184,7 @@ class FText():
             raise ParseFileError('invalid history type: {0} with cursor at 0x{1:X}'.format(self.history_type, cursor.tell()))
         
     def serialize(self):
-        bytes_arr = pack_uint32(self.flags)
+        bytes_arr = bytearray(pack_uint32(self.flags))
         bytes_arr += pack_int8(self.history_type)
         if self.history_type == 0:
             bytes_arr += pack_string(self.namespace)
@@ -207,7 +204,7 @@ class FGuid():
         self.d = read_uint32(cursor)
         
     def serialize(self):
-        bytes_arr = pack_uint32(self.a)
+        bytes_arr = bytearray(pack_uint32(self.a))
         bytes_arr += pack_uint32(self.b)
         bytes_arr += pack_uint32(self.c)
         bytes_arr += pack_uint32(self.d)
@@ -351,37 +348,37 @@ class UScriptArray():
         return '@@'.join(str_list)
 
     def serilize(self):
-        bytes_result = pack_uint32(self.element_count)
+        byte_arr = bytearray(pack_uint32(self.element_count))
         inner_type = self.inner_tyoe
         if inner_type in 'BoolProperty' or inner_type in 'ByteProperty':
             for element in self.content:
-                bytes_result += pack_uint8(element)
+                byte_arr += pack_uint8(element)
         elif inner_type in 'ObjectProperty' or inner_type in 'TextProperty':
             for element in self.content:
-                bytes_result += element.serialize()
+                byte_arr += element.serialize()
         elif inner_type in 'FloatProperty': # no float in this project...
             raise PackFileError('Unimplement float property reader...')
         elif inner_type in 'StrProperty':
             for element in self.content:
-                bytes_result += pack_string(element)
+                byte_arr += pack_string(element)
         elif inner_type in 'NameProperty':
             for element in self.content:
-                bytes_result += pack_fname(element['NAME'], element['INDEX'])
+                byte_arr += pack_fname(element['NAME'], element['INDEX'])
         elif inner_type in 'IntProperty':
             for element in self.content:
-                bytes_result += pack_int32(element)             
+                byte_arr += pack_int32(element)             
         elif inner_type in 'UInt16Property':
             for element in self.content:
-                bytes_result += pack_uint16(element)    
+                byte_arr += pack_uint16(element)    
         elif inner_type in 'UInt32Property':
             for element in self.content:
-                bytes_result += pack_uint32(element)
+                byte_arr += pack_uint32(element)
         elif inner_type in 'UInt64Property':
             for element in self.content:
-                bytes_result += pack_uint64(element)
+                byte_arr += pack_uint64(element)
         else:
             raise PackFileError('Unknown property type...')
-        return bytes_result
+        return byte_arr
         
 
 
@@ -457,8 +454,8 @@ class FPropertyTag():
         return False
     
     def serialize(self):
-        bytes_result = pack_fname(self.name)
-        bytes_result += pack_fname(self.property_type)
+        byte_arr = bytearray(pack_fname(self.name))
+        byte_arr += pack_fname(self.property_type)
 
         bytes_data = b''
         if self.property_type in 'TextProperty':
@@ -473,19 +470,19 @@ class FPropertyTag():
         else:
             raise PackFileError('Unknown proprty type:{0}'.format(self.property_type))
 
-        bytes_result += pack_int32(len(bytes_data))
-        bytes_result += pack_int32(self.array_index)
+        byte_arr += pack_int32(len(bytes_data))
+        byte_arr += pack_int32(self.array_index)
 
         if self.property_type in 'EnumProperty':
-            bytes_result += pack_fname(self.enum_name)
+            byte_arr += pack_fname(self.enum_name)
         elif self.property_type in 'ArrayProperty':
-            bytes_result += pack_fname(self.inner_type)
+            byte_arr += pack_fname(self.inner_type)
         
-        bytes_result += pack_int8(self.has_property_guid)
+        byte_arr += pack_int8(self.has_property_guid)
         if self.has_property_guid:
-            bytes_result += self.property_guid.serialize()
-        bytes_result += bytes_data
-        return bytes_result
+            byte_arr += self.property_guid.serialize()
+        byte_arr += bytes_data
+        return byte_arr
             
 
 class FRowStruct():
@@ -521,11 +518,11 @@ class FRowStruct():
 
             
     def serialize(self):
-        bytes_result = pack_fname(self.name, self.name_num)
+        byte_arr = bytearray(pack_fname(self.name, self.name_num))
         for property_tag in self.columns:
-            bytes_result += property_tag.serialize()
-        bytes_result += pack_fname('None')
-        return bytes_result
+            byte_arr += property_tag.serialize()
+        byte_arr += pack_fname('None')
+        return byte_arr
     
 
 class UObject():
@@ -764,7 +761,7 @@ UNPACK_TEXT_FILE = 0
 UNPACK_TALK_FILE = 1
 REPACK_TEXT_FILE = 2
 REPACK_TALK_FILE = 3
-CURRENT_COMMAND = REPACK_TEXT_FILE
+CURRENT_COMMAND = REPACK_TALK_FILE
 
 def main():
     if CURRENT_COMMAND == UNPACK_TEXT_FILE:
