@@ -725,7 +725,7 @@ def parse_localization_files_to_excel(ja_file_name, en_file_name, cn_file_name, 
         zh_tw_data[row_id][row_num] = row_text
 
     output_dict = {}
-    output_dict['ID'], output_dict['NID'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], []
+    output_dict['ID'], output_dict['NID'], output_dict['WIKI'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], [], []
     for row_id, row_data in zh_cn_data.items():
         for row_index, row_text in row_data.items():
             output_dict['ID'].append(row_id)
@@ -761,7 +761,7 @@ UNPACK_TEXT_FILE = 0
 UNPACK_TALK_FILE = 1
 REPACK_TEXT_FILE = 2
 REPACK_TALK_FILE = 3
-CURRENT_COMMAND = REPACK_TALK_FILE
+CURRENT_COMMAND = UNPACK_TEXT_FILE
 
 def main():
     if CURRENT_COMMAND == UNPACK_TEXT_FILE:
