@@ -17,8 +17,8 @@ from pandas import DataFrame
 
 ROOT_FOLDER = os.path.dirname(__file__)
 SOURCE_FOLDER = os.path.join(ROOT_FOLDER, 'Text\\Database\\')
-TEXT_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TEXT_FINAL.xlsx')
-TALK_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TALK_FINAL.xlsx')
+TEXT_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'GameTextZH_CN.xlsx')
+TALK_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'TalkData_ZH_CH.xlsx')
 OUTPUT_FOLDER = os.path.join(ROOT_FOLDER, 'Output\\')
 
 EN_TALK_ASSET_NAME = r'TalkData_EN'
@@ -725,7 +725,7 @@ def parse_localization_files_to_excel(ja_file_name, en_file_name, cn_file_name, 
         zh_tw_data[row_id][row_num] = row_text
 
     output_dict = {}
-    output_dict['ID'], output_dict['NID'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], []
+    output_dict['ID'], output_dict['NID'], output_dict['WIKI'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], [], []
     for row_id, row_data in zh_cn_data.items():
         for row_index, row_text in row_data.items():
             output_dict['ID'].append(row_id)

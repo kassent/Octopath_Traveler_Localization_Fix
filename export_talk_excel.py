@@ -17,8 +17,8 @@ from pandas import DataFrame
 
 ROOT_FOLDER = os.path.dirname(__file__)
 SOURCE_FOLDER = os.path.join(ROOT_FOLDER, 'Text\\Database\\')
-TEXT_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TEXT_FINAL.xlsx')
-TALK_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'localization_TALK_FINAL.xlsx')
+TEXT_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'GameTextZH_CN.xlsx')
+TALK_EXCEL_PATH = os.path.join(ROOT_FOLDER, r'TalkData_ZH_CH.xlsx')
 OUTPUT_FOLDER = os.path.join(ROOT_FOLDER, 'Output\\')
 
 EN_TALK_ASSET_NAME = r'TalkData_EN'
