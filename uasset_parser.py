@@ -443,6 +443,11 @@ class FPropertyTag():
     def get_name(self):
         return self.name
     
+    
+    def get_array(self):
+        if self.property_type in 'ArrayProperty':
+            return self.array_data.content
+    
     def set_string(self, string: str):
         if self.property_type in 'TextProperty':
             self.text_data.source_string = string
@@ -500,10 +505,13 @@ class FRowStruct():
                 break
     
     def query(self):
+        id, idx, speaker, content = self.name, self.name_num, None, ''
         for column in self.columns:
             if column.get_name() == 'Text':
-                return (self.name, self.name_num, str(column))
-        return (self.name, self.name_num, '')
+                content = str(column)
+            if column.get_name() == 'Names':
+                speaker = column.get_array() #UScriptArray
+        return (id, idx, speaker, content)
     
     
     def update_localization_text(self):
@@ -589,8 +597,8 @@ class UDataTable(UObject):
     def __iter__(self):
         """读取翻译文件"""
         for row in self.rows:
-            row_name, row_name_num, row_text = row.query()
-            yield row_name, row_name_num, row_text   
+            # row_name, row_name_num, row_speaker, row_text = row.query()
+            yield row.query()   
 
 
 class ClassList():
@@ -693,53 +701,77 @@ def parse_excel_file(excel_dict, excel_path):
     for i in excel_content.index.values:
         row_dict = excel_content.loc[i, ['ID', 'NID', 'CN']]# .to_dict()
         row_id, row_nid, row_text = row_dict['ID'], row_dict['NID'], row_dict['CN']
-        if isinstance(row_text, str):
-            if row_id not in excel_dict:
-                excel_dict[row_id] = {}
-            excel_dict[row_id][row_nid] = row_text
+        row_text = row_text if isinstance(row_text, str) else str()
+        if row_id not in excel_dict:
+            excel_dict[row_id] = {}
+        excel_dict[row_id][row_nid] = row_text
 
 
 def parse_localization_files_to_excel(ja_file_name, en_file_name, cn_file_name, tw_file_name, wk_file_name):
-    en_data, zh_cn_data, zh_tw_data, jp_data, wk_data = {}, {}, {}, {}, {}
+    en_data, zh_cn_data, zh_tw_data, jp_data, wk_data, cn_talk_speaker_data, cn_name_data = {}, {}, {}, {}, {}, {}, {}
     _, jp_data_table = read_localization_file(SOURCE_FOLDER + ja_file_name)
-    for row_id, row_num, row_text in jp_data_table:
+    for row_id, row_num, _, row_text in jp_data_table:
         assert row_id not in jp_data or (row_id in jp_data and row_num not in jp_data[row_id])
         if row_id not in jp_data:
             jp_data[row_id] = {}
         jp_data[row_id][row_num] = row_text
     
     _, en_data_table = read_localization_file(SOURCE_FOLDER + en_file_name)
-    for row_id, row_num, row_text in en_data_table:
+    for row_id, row_num, _, row_text in en_data_table:
         if row_id not in en_data:
             en_data[row_id] = {}
         en_data[row_id][row_num] = row_text
 
     _, cn_data_table = read_localization_file(SOURCE_FOLDER + cn_file_name)
-    for row_id, row_num, row_text in cn_data_table:
+    for row_id, row_num, row_speaker, row_text in cn_data_table:
         if row_id not in zh_cn_data:
             zh_cn_data[row_id] = {}
         zh_cn_data[row_id][row_num] = row_text
+        if row_speaker and len(row_speaker):
+            if row_id not in cn_talk_speaker_data:
+                cn_talk_speaker_data[row_id] = {}
+            cn_talk_speaker_data[row_id][row_num] = row_speaker[0]
      
     _, tw_data_table = read_localization_file(SOURCE_FOLDER + tw_file_name)
-    for row_id, row_num, row_text in tw_data_table:
+    for row_id, row_num, _, row_text in tw_data_table:
         if row_id not in zh_tw_data:
             zh_tw_data[row_id] = {}
         zh_tw_data[row_id][row_num] = row_text
         
     _, wk_data_table = read_localization_file(SOURCE_FOLDER + wk_file_name)
-    for row_id, row_num, row_text in wk_data_table:
+    for row_id, row_num, _, row_text in wk_data_table:
         if row_id not in wk_data:
             wk_data[row_id] = {}
         wk_data[row_id][row_num] = row_text
 
+    if len(cn_talk_speaker_data):
+        _, cn_name_data_table = read_localization_file(SOURCE_FOLDER + CN_TEXT_ASSET_NAME)
+        for row_id, row_num, _, row_text in cn_name_data_table:
+            if row_id not in cn_name_data:
+                cn_name_data[row_id] = {}
+            cn_name_data[row_id][row_num] = row_text       
+    
     output_dict = {}
-    output_dict['ID'], output_dict['NID'], output_dict['WIKI'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], [], [], []
+    output_dict['ID'], output_dict['NID'] = [], []
+    if len(cn_talk_speaker_data):
+        output_dict['SPEAKER'] = []
+    output_dict['WIKI'], output_dict['CN'], output_dict['EN'], output_dict['JP'], output_dict['TW'] = [], [], [], [], []
     for row_id, row_data in zh_cn_data.items():
         for row_index, row_text in row_data.items():
             output_dict['ID'].append(row_id)
             output_dict['NID'].append(row_index)
             output_dict['WIKI'].append(wk_data[row_id][row_index] if row_id in wk_data and row_index in wk_data[row_id] else '')
             output_dict['CN'].append(row_text)
+            
+            if 'SPEAKER' in output_dict:
+                speaker_name = str()
+                speaker = cn_talk_speaker_data[row_id][row_index] if row_id in cn_talk_speaker_data and row_index in cn_talk_speaker_data[row_id] else None
+                if 'NAME' in speaker and 'INDEX' in speaker:
+                    if speaker['NAME'] in cn_name_data:
+                        if speaker['INDEX'] in cn_name_data[speaker['NAME']]:
+                            speaker_name = cn_name_data[speaker['NAME']][speaker['INDEX']]
+                output_dict['SPEAKER'].append(speaker_name)
+                # output_dict['SPEAKER'].append(cn_talk_speaker_data[row_id][row_index] if row_id in cn_talk_speaker_data and row_index in cn_talk_speaker_data[row_id] else '')
             output_dict['EN'].append(en_data[row_id][row_index] if row_id in en_data and row_index in en_data[row_id] else '')
             output_dict['JP'].append(jp_data[row_id][row_index] if row_id in jp_data and row_index in jp_data[row_id] else '')
             output_dict['TW'].append(zh_tw_data[row_id][row_index] if row_id in zh_tw_data and row_index in zh_tw_data[row_id] else '')
@@ -770,7 +802,7 @@ UNPACK_TEXT_FILE = 0
 UNPACK_TALK_FILE = 1
 REPACK_TEXT_FILE = 2
 REPACK_TALK_FILE = 3
-CURRENT_COMMAND = REPACK_TEXT_FILE
+CURRENT_COMMAND = UNPACK_TALK_FILE
 
 def main():
     if CURRENT_COMMAND == UNPACK_TEXT_FILE:
